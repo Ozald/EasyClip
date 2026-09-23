@@ -8,6 +8,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <JuceHeader.h>
 
 //==============================================================================
 EasyClipAudioProcessor::EasyClipAudioProcessor()
@@ -19,7 +20,7 @@ EasyClipAudioProcessor::EasyClipAudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+	 ), parameters(*this, nullptr, "Parameters", createParameterLayout())
 #endif
 {
 }
@@ -144,6 +145,10 @@ void EasyClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+	float drive = parameters.getRawParameterValue("DRIVE")->load();
+	float gain = parameters.getRawParameterValue("OUTGAIN")->load();
+	float clipThreshold = parameters.getRawParameterValue("THRESHOLD")->load();; // Set the clipping threshold
+
     // This is the place where you'd normally do the guts of your plugin's
     // audio processing...
     // Make sure to reset the state if your inner loop is processing
@@ -154,7 +159,17 @@ void EasyClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     {
         auto* channelData = buffer.getWritePointer (channel);
 
-        // ..do something to the data...
+		for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+			channelData[sample] *= drive;
+
+            if (channelData[sample] > clipThreshold)
+                channelData[sample] = clipThreshold; 
+            else if (channelData[sample] < -clipThreshold)
+				channelData[sample] = -clipThreshold;
+
+            channelData[sample] *= gain;
+        }
     }
 }
 
@@ -188,4 +203,32 @@ void EasyClipAudioProcessor::setStateInformation (const void* data, int sizeInBy
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new EasyClipAudioProcessor();
+}
+
+juce::AudioProcessorValueTreeState::ParameterLayout EasyClipAudioProcessor::createParameterLayout()
+{
+    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "OUTGAIN",
+        "Out Gain",
+		juce::NormalisableRange<float>(0.0f, 2.0f, 0.01f),
+        1.0f
+    ));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "THRESHOLD",
+        "Threshold",
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f),
+        1.0f
+    ));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "DRIVE",
+        "Drive",
+        juce::NormalisableRange<float>(1.0f, 5.0f, 0.01f),
+        0.0f
+    ));
+
+    return {params.begin(), params.end()};
 }
